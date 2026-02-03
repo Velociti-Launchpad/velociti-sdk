@@ -11,6 +11,12 @@ export interface VelocitiConfig {
     network?: 'mainnet' | 'devnet';
     /** Custom API base URL (optional) */
     baseUrl?: string;
+    /** Enable retry logic for failed requests */
+    enableRetry?: boolean;
+    /** Max retry attempts (default: 3) */
+    maxRetries?: number;
+    /** Retry delay in ms (default: 1000) */
+    retryDelay?: number;
 }
 
 /** Token deployment configuration */
@@ -33,6 +39,27 @@ export interface DeployTokenParams {
         telegram?: string;
         website?: string;
     };
+}
+
+/** Batch deploy parameters */
+export interface BatchDeployParams {
+    /** Array of tokens to deploy */
+    tokens: DeployTokenParams[];
+    /** Single payer for all tokens */
+    payerAddress: string;
+}
+
+/** Batch deploy result */
+export interface BatchDeployResult {
+    /** Individual results for each token */
+    results: Array<{
+        index: number;
+        success: boolean;
+        mintAddress?: string;
+        error?: string;
+    }>;
+    /** Total estimated fee for all tokens */
+    totalEstimatedFee: number;
 }
 
 /** Prepared transaction ready for signing */
@@ -85,6 +112,30 @@ export interface TokenInfo {
     createdAt: string;
 }
 
+/** Token analytics data */
+export interface TokenAnalytics {
+    /** Token mint address */
+    mintAddress: string;
+    /** Price history (hourly for last 24h) */
+    priceHistory: Array<{
+        timestamp: number;
+        price: number;
+        volume: number;
+    }>;
+    /** 24h volume in SOL */
+    volume24h: number;
+    /** 24h price change percentage */
+    priceChange24h: number;
+    /** Number of unique holders */
+    holders: number;
+    /** Total number of trades */
+    trades: number;
+    /** All-time high price in SOL */
+    allTimeHigh: number;
+    /** All-time low price in SOL */
+    allTimeLow: number;
+}
+
 /** Fee claiming result */
 export interface ClaimFeesResult {
     /** Transaction signature */
@@ -105,6 +156,39 @@ export interface SubmitResult {
     token?: TokenInfo;
     /** Error message if failed */
     error?: string;
+}
+
+/** Webhook configuration */
+export interface WebhookConfig {
+    /** Webhook URL to receive events */
+    url: string;
+    /** Events to subscribe to */
+    events: WebhookEvent[];
+    /** Optional secret for signature verification */
+    secret?: string;
+}
+
+/** Webhook event types */
+export type WebhookEvent =
+    | 'token.created'
+    | 'token.graduated'
+    | 'token.trade'
+    | 'fees.claimed'
+    | 'fees.available';
+
+/** Webhook payload */
+export interface WebhookPayload {
+    /** Event type */
+    event: WebhookEvent;
+    /** Event timestamp */
+    timestamp: number;
+    /** Event data */
+    data: {
+        mintAddress: string;
+        [key: string]: unknown;
+    };
+    /** Signature for verification */
+    signature?: string;
 }
 
 /** API response wrapper */

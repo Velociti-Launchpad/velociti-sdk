@@ -17,7 +17,12 @@
  *   taxRate: 5
  * });
  * ```
+ * 
+ * @packageDocumentation
  */
 
 export { VelocitiClient } from './client';
 export * from './types';
+
+// React hooks (for client-side use)
+export * from './react';

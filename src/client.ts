@@ -12,6 +12,10 @@ import {
     RateLimitInfo,
     PreparedTransaction,
     SubmitResult,
+    BatchDeployParams,
+    BatchDeployResult,
+    TokenAnalytics,
+    WebhookConfig,
 } from './types';
 
 const DEFAULT_MAINNET_URL = 'https://velociti.fun/api/sdk';
@@ -22,6 +26,9 @@ export class VelocitiClient {
     private baseUrl: string;
     private network: 'mainnet' | 'devnet';
     private rateLimitInfo: RateLimitInfo | null = null;
+    private enableRetry: boolean;
+    private maxRetries: number;
+    private retryDelay: number;
 
     constructor(config: VelocitiConfig) {
         if (!config.apiKey) {
@@ -32,56 +39,98 @@ export class VelocitiClient {
         this.network = config.network || 'mainnet';
         this.baseUrl = config.baseUrl ||
             (this.network === 'mainnet' ? DEFAULT_MAINNET_URL : DEFAULT_DEVNET_URL);
+
+        // Retry configuration
+        this.enableRetry = config.enableRetry ?? true;
+        this.maxRetries = config.maxRetries ?? 3;
+        this.retryDelay = config.retryDelay ?? 1000;
     }
 
     /**
-     * Make an authenticated request to the VELOCITI API
+     * Sleep helper for retry logic
+     */
+    private sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Make an authenticated request to the VELOCITI API with retry logic
      */
     private async request<T>(
         endpoint: string,
         options: RequestInit = {}
     ): Promise<ApiResponse<T>> {
-        const url = `${this.baseUrl}${endpoint}`;
+        let lastError: Error | null = null;
+        const attempts = this.enableRetry ? this.maxRetries : 1;
 
-        const response = await fetch(url, {
-            ...options,
-            headers: {
-                'Content-Type': 'application/json',
-                'X-API-Key': this.apiKey,
-                ...options.headers,
-            },
-        });
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                const url = `${this.baseUrl}${endpoint}`;
 
-        // Update rate limit info from headers
-        const remaining = response.headers.get('X-RateLimit-Remaining');
-        const limit = response.headers.get('X-RateLimit-Limit');
-        const reset = response.headers.get('X-RateLimit-Reset');
+                const response = await fetch(url, {
+                    ...options,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': this.apiKey,
+                        ...options.headers,
+                    },
+                });
 
-        if (remaining && limit && reset) {
-            this.rateLimitInfo = {
-                remaining: parseInt(remaining, 10),
-                limit: parseInt(limit, 10),
-                reset: parseInt(reset, 10),
-            };
+                // Update rate limit info from headers
+                const remaining = response.headers.get('X-RateLimit-Remaining');
+                const limit = response.headers.get('X-RateLimit-Limit');
+                const reset = response.headers.get('X-RateLimit-Reset');
+
+                if (remaining && limit && reset) {
+                    this.rateLimitInfo = {
+                        remaining: parseInt(remaining, 10),
+                        limit: parseInt(limit, 10),
+                        reset: parseInt(reset, 10),
+                    };
+                }
+
+                if (response.status === 429) {
+                    // Rate limited - retry with exponential backoff
+                    if (attempt < attempts) {
+                        await this.sleep(this.retryDelay * Math.pow(2, attempt - 1));
+                        continue;
+                    }
+                    return {
+                        success: false,
+                        error: 'Rate limit exceeded. Please try again later.',
+                    };
+                }
+
+                if (response.status >= 500 && attempt < attempts) {
+                    // Server error - retry
+                    await this.sleep(this.retryDelay * Math.pow(2, attempt - 1));
+                    continue;
+                }
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({})) as { error?: string };
+                    return {
+                        success: false,
+                        error: errorData.error || `HTTP ${response.status}: ${response.statusText}`,
+                    };
+                }
+
+                const data = await response.json() as T;
+                return { success: true, data };
+
+            } catch (error) {
+                lastError = error as Error;
+                if (attempt < attempts) {
+                    await this.sleep(this.retryDelay * Math.pow(2, attempt - 1));
+                    continue;
+                }
+            }
         }
 
-        if (response.status === 429) {
-            return {
-                success: false,
-                error: 'Rate limit exceeded. Please try again later.',
-            };
-        }
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({})) as { error?: string };
-            return {
-                success: false,
-                error: errorData.error || `HTTP ${response.status}: ${response.statusText}`,
-            };
-        }
-
-        const data = await response.json() as T;
-        return { success: true, data };
+        return {
+            success: false,
+            error: lastError?.message || 'Request failed after retries',
+        };
     }
 
     /**
@@ -89,24 +138,6 @@ export class VelocitiClient {
      * 
      * Returns an unsigned transaction that you must sign with your wallet.
      * After signing, call submitTransaction() to complete the deployment.
-     * 
-     * @example
-     * ```typescript
-     * // Step 1: Prepare the transaction
-     * const prepared = await client.prepareTokenDeploy({
-     *   name: 'My Token',
-     *   symbol: 'MTK',
-     *   taxRate: 5,
-     *   payerAddress: 'YourWalletAddress...'
-     * });
-     * 
-     * // Step 2: Sign with your wallet (example using @solana/web3.js)
-     * const tx = Transaction.from(Buffer.from(prepared.data.transaction, 'base64'));
-     * const signedTx = await wallet.signTransaction(tx);
-     * 
-     * // Step 3: Submit the signed transaction
-     * const result = await client.submitTransaction(signedTx.serialize().toString('base64'));
-     * ```
      */
     async prepareTokenDeploy(params: DeployTokenParams): Promise<ApiResponse<PreparedTransaction>> {
         // Validate params
@@ -143,44 +174,54 @@ export class VelocitiClient {
 
     /**
      * Convenience method: Deploy token in one call (requires wallet adapter)
-     * 
-     * This combines prepareTokenDeploy and submitTransaction.
-     * You must provide a signTransaction function from your wallet.
-     * 
-     * @example
-     * ```typescript
-     * const result = await client.deployToken({
-     *   name: 'My Token',
-     *   symbol: 'MTK',
-     *   taxRate: 5,
-     *   payerAddress: wallet.publicKey.toBase58()
-     * }, async (tx) => {
-     *   return await wallet.signTransaction(tx);
-     * });
-     * ```
      */
     async deployToken(
         params: DeployTokenParams,
         signTransaction: (transaction: Uint8Array) => Promise<Uint8Array>
     ): Promise<ApiResponse<SubmitResult>> {
-        // Step 1: Prepare
         const prepared = await this.prepareTokenDeploy(params);
         if (!prepared.success || !prepared.data) {
             return { success: false, error: prepared.error || 'Failed to prepare transaction' };
         }
 
-        // Step 2: Sign
         try {
-            const txBytes = Uint8Array.from(atob(prepared.data.transaction), c => c.charCodeAt(0));
+            const txBytes = Uint8Array.from(atob(prepared.data.transaction), (c: string) => c.charCodeAt(0));
             const signedBytes = await signTransaction(txBytes);
             const signedBase64 = btoa(String.fromCharCode(...signedBytes));
-
-            // Step 3: Submit
             return this.submitTransaction(signedBase64);
-        } catch (error: any) {
-            return { success: false, error: `Signing failed: ${error.message}` };
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            return { success: false, error: `Signing failed: ${message}` };
         }
     }
+
+    // ============================================
+    // BATCH DEPLOY
+    // ============================================
+
+    /**
+     * Prepare multiple token deployments in batch
+     */
+    async prepareBatchDeploy(params: BatchDeployParams): Promise<ApiResponse<BatchDeployResult>> {
+        if (!params.tokens || params.tokens.length === 0) {
+            return { success: false, error: 'At least one token is required' };
+        }
+        if (params.tokens.length > 10) {
+            return { success: false, error: 'Maximum 10 tokens per batch' };
+        }
+        if (!params.payerAddress) {
+            return { success: false, error: 'Payer address is required' };
+        }
+
+        return this.request<BatchDeployResult>('/deploy/batch', {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+    }
+
+    // ============================================
+    // TOKEN ANALYTICS
+    // ============================================
 
     /**
      * Get token information by mint address
@@ -197,6 +238,29 @@ export class VelocitiClient {
     }
 
     /**
+     * Get detailed analytics for a token
+     */
+    async getTokenAnalytics(mintAddress: string): Promise<ApiResponse<TokenAnalytics>> {
+        return this.request<TokenAnalytics>(`/tokens/${mintAddress}/analytics`);
+    }
+
+    /**
+     * Get price history for a token
+     * @param mintAddress - Token mint address
+     * @param period - Time period: '1h', '24h', '7d', '30d'
+     */
+    async getPriceHistory(
+        mintAddress: string,
+        period: '1h' | '24h' | '7d' | '30d' = '24h'
+    ): Promise<ApiResponse<TokenAnalytics['priceHistory']>> {
+        return this.request(`/tokens/${mintAddress}/price-history?period=${period}`);
+    }
+
+    // ============================================
+    // FEE CLAIMING
+    // ============================================
+
+    /**
      * Prepare fee claim transaction
      */
     async prepareClaimFees(
@@ -211,7 +275,6 @@ export class VelocitiClient {
 
     /**
      * Claim accumulated transfer fees for a token
-     * Combines prepare + sign + submit
      */
     async claimFees(
         mintAddress: string,
@@ -224,7 +287,7 @@ export class VelocitiClient {
         }
 
         try {
-            const txBytes = Uint8Array.from(atob(prepared.data.transaction), c => c.charCodeAt(0));
+            const txBytes = Uint8Array.from(atob(prepared.data.transaction), (c: string) => c.charCodeAt(0));
             const signedBytes = await signTransaction(txBytes);
             const signedBase64 = btoa(String.fromCharCode(...signedBytes));
 
@@ -232,8 +295,9 @@ export class VelocitiClient {
                 method: 'POST',
                 body: JSON.stringify({ signedTransaction: signedBase64, mintAddress }),
             });
-        } catch (error: any) {
-            return { success: false, error: `Signing failed: ${error.message}` };
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            return { success: false, error: `Signing failed: ${message}` };
         }
     }
 
@@ -243,6 +307,49 @@ export class VelocitiClient {
     async getUnclaimedFees(mintAddress: string): Promise<ApiResponse<{ amount: string; valueInSol: number }>> {
         return this.request(`/fees/${mintAddress}`);
     }
+
+    // ============================================
+    // WEBHOOKS
+    // ============================================
+
+    /**
+     * Register a webhook to receive events
+     */
+    async registerWebhook(config: WebhookConfig): Promise<ApiResponse<{ id: string }>> {
+        return this.request('/webhooks', {
+            method: 'POST',
+            body: JSON.stringify(config),
+        });
+    }
+
+    /**
+     * List all registered webhooks
+     */
+    async listWebhooks(): Promise<ApiResponse<Array<WebhookConfig & { id: string }>>> {
+        return this.request('/webhooks');
+    }
+
+    /**
+     * Delete a webhook
+     */
+    async deleteWebhook(webhookId: string): Promise<ApiResponse<{ deleted: boolean }>> {
+        return this.request(`/webhooks/${webhookId}`, {
+            method: 'DELETE',
+        });
+    }
+
+    /**
+     * Test a webhook endpoint
+     */
+    async testWebhook(webhookId: string): Promise<ApiResponse<{ sent: boolean }>> {
+        return this.request(`/webhooks/${webhookId}/test`, {
+            method: 'POST',
+        });
+    }
+
+    // ============================================
+    // UTILITY METHODS
+    // ============================================
 
     /**
      * Get current rate limit status
@@ -256,5 +363,12 @@ export class VelocitiClient {
      */
     getNetwork(): 'mainnet' | 'devnet' {
         return this.network;
+    }
+
+    /**
+     * Check if API key is valid
+     */
+    async validateApiKey(): Promise<ApiResponse<{ valid: boolean; tier: string }>> {
+        return this.request('/auth/validate');
     }
 }

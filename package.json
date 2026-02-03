@@ -1,13 +1,17 @@
 {
     "name": "@velociti/sdk",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Official SDK for deploying and managing tokens on VELOCITI - the Solana tax token launchpad",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
+    "bin": {
+        "velociti": "./dist/cli.js"
+    },
     "scripts": {
         "build": "tsc",
         "test": "jest",
-        "prepublishOnly": "npm run build"
+        "prepublishOnly": "npm run build",
+        "docs": "typedoc --out docs/api src/index.ts"
     },
     "keywords": [
         "solana",
@@ -16,7 +20,9 @@
         "velociti",
         "tax-token",
         "token-2022",
-        "ai-agent"
+        "ai-agent",
+        "cli",
+        "sdk"
     ],
     "author": "VELOCITI",
     "license": "MIT",
@@ -25,11 +31,24 @@
     },
     "devDependencies": {
         "@types/node": "^20.0.0",
+        "typedoc": "^0.25.0",
         "typescript": "^5.3.0"
     },
     "repository": {
         "type": "git",
         "url": "https://github.com/Velociti-Launchpad/velociti-sdk"
     },
-    "homepage": "https://velociti.fun/developers"
+    "homepage": "https://velociti.fun/developers",
+    "bugs": {
+        "url": "https://github.com/Velociti-Launchpad/velociti-sdk/issues"
+    },
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE",
+        "CHANGELOG.md"
+    ],
+    "engines": {
+        "node": ">=18.0.0"
+    }
 }
