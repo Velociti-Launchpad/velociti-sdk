@@ -10,10 +10,12 @@ import {
     ClaimFeesResult,
     ApiResponse,
     RateLimitInfo,
+    PreparedTransaction,
+    SubmitResult,
 } from './types';
 
-const DEFAULT_MAINNET_URL = 'https://velociti.xyz/api/sdk';
-const DEFAULT_DEVNET_URL = 'https://devnet.velociti.xyz/api/sdk';
+const DEFAULT_MAINNET_URL = 'https://velociti.fun/api/sdk';
+const DEFAULT_DEVNET_URL = 'https://devnet.velociti.fun/api/sdk';
 
 export class VelocitiClient {
     private apiKey: string;
@@ -23,7 +25,7 @@ export class VelocitiClient {
 
     constructor(config: VelocitiConfig) {
         if (!config.apiKey) {
-            throw new Error('API key is required. Get one at velociti.xyz/developers');
+            throw new Error('API key is required. Get one at velociti.fun/developers');
         }
 
         this.apiKey = config.apiKey;
@@ -83,19 +85,30 @@ export class VelocitiClient {
     }
 
     /**
-     * Deploy a new token on VELOCITI
+     * Prepare a token deployment transaction (Step 1)
+     * 
+     * Returns an unsigned transaction that you must sign with your wallet.
+     * After signing, call submitTransaction() to complete the deployment.
      * 
      * @example
      * ```typescript
-     * const result = await client.deployToken({
+     * // Step 1: Prepare the transaction
+     * const prepared = await client.prepareTokenDeploy({
      *   name: 'My Token',
      *   symbol: 'MTK',
-     *   description: 'A test token',
      *   taxRate: 5,
+     *   payerAddress: 'YourWalletAddress...'
      * });
+     * 
+     * // Step 2: Sign with your wallet (example using @solana/web3.js)
+     * const tx = Transaction.from(Buffer.from(prepared.data.transaction, 'base64'));
+     * const signedTx = await wallet.signTransaction(tx);
+     * 
+     * // Step 3: Submit the signed transaction
+     * const result = await client.submitTransaction(signedTx.serialize().toString('base64'));
      * ```
      */
-    async deployToken(params: DeployTokenParams): Promise<ApiResponse<TokenInfo>> {
+    async prepareTokenDeploy(params: DeployTokenParams): Promise<ApiResponse<PreparedTransaction>> {
         // Validate params
         if (!params.name || params.name.length > 32) {
             return { success: false, error: 'Name is required and must be <= 32 characters' };
@@ -103,14 +116,70 @@ export class VelocitiClient {
         if (!params.symbol || params.symbol.length > 10) {
             return { success: false, error: 'Symbol is required and must be <= 10 characters' };
         }
+        if (!params.payerAddress) {
+            return { success: false, error: 'Payer wallet address is required' };
+        }
         if (params.taxRate !== undefined && (params.taxRate < 0 || params.taxRate > 10)) {
             return { success: false, error: 'Tax rate must be between 0 and 10%' };
         }
 
-        return this.request<TokenInfo>('/deploy', {
+        return this.request<PreparedTransaction>('/deploy/prepare', {
             method: 'POST',
             body: JSON.stringify(params),
         });
+    }
+
+    /**
+     * Submit a signed transaction (Step 2)
+     * 
+     * @param signedTransaction - Base64 encoded signed transaction
+     */
+    async submitTransaction(signedTransaction: string): Promise<ApiResponse<SubmitResult>> {
+        return this.request<SubmitResult>('/deploy/submit', {
+            method: 'POST',
+            body: JSON.stringify({ signedTransaction }),
+        });
+    }
+
+    /**
+     * Convenience method: Deploy token in one call (requires wallet adapter)
+     * 
+     * This combines prepareTokenDeploy and submitTransaction.
+     * You must provide a signTransaction function from your wallet.
+     * 
+     * @example
+     * ```typescript
+     * const result = await client.deployToken({
+     *   name: 'My Token',
+     *   symbol: 'MTK',
+     *   taxRate: 5,
+     *   payerAddress: wallet.publicKey.toBase58()
+     * }, async (tx) => {
+     *   return await wallet.signTransaction(tx);
+     * });
+     * ```
+     */
+    async deployToken(
+        params: DeployTokenParams,
+        signTransaction: (transaction: Uint8Array) => Promise<Uint8Array>
+    ): Promise<ApiResponse<SubmitResult>> {
+        // Step 1: Prepare
+        const prepared = await this.prepareTokenDeploy(params);
+        if (!prepared.success || !prepared.data) {
+            return { success: false, error: prepared.error || 'Failed to prepare transaction' };
+        }
+
+        // Step 2: Sign
+        try {
+            const txBytes = Uint8Array.from(atob(prepared.data.transaction), c => c.charCodeAt(0));
+            const signedBytes = await signTransaction(txBytes);
+            const signedBase64 = btoa(String.fromCharCode(...signedBytes));
+
+            // Step 3: Submit
+            return this.submitTransaction(signedBase64);
+        } catch (error: any) {
+            return { success: false, error: `Signing failed: ${error.message}` };
+        }
     }
 
     /**
@@ -128,20 +197,44 @@ export class VelocitiClient {
     }
 
     /**
-     * Claim accumulated transfer fees for a token
-     * Only the token creator can claim fees
-     * 
-     * @param mintAddress - The token mint address
-     * @param walletAddress - Your wallet address to receive fees
+     * Prepare fee claim transaction
      */
-    async claimFees(
+    async prepareClaimFees(
         mintAddress: string,
         walletAddress: string
-    ): Promise<ApiResponse<ClaimFeesResult>> {
-        return this.request<ClaimFeesResult>('/fees/claim', {
+    ): Promise<ApiResponse<PreparedTransaction>> {
+        return this.request<PreparedTransaction>('/fees/prepare', {
             method: 'POST',
             body: JSON.stringify({ mintAddress, walletAddress }),
         });
+    }
+
+    /**
+     * Claim accumulated transfer fees for a token
+     * Combines prepare + sign + submit
+     */
+    async claimFees(
+        mintAddress: string,
+        walletAddress: string,
+        signTransaction: (transaction: Uint8Array) => Promise<Uint8Array>
+    ): Promise<ApiResponse<ClaimFeesResult>> {
+        const prepared = await this.prepareClaimFees(mintAddress, walletAddress);
+        if (!prepared.success || !prepared.data) {
+            return { success: false, error: prepared.error || 'Failed to prepare claim' };
+        }
+
+        try {
+            const txBytes = Uint8Array.from(atob(prepared.data.transaction), c => c.charCodeAt(0));
+            const signedBytes = await signTransaction(txBytes);
+            const signedBase64 = btoa(String.fromCharCode(...signedBytes));
+
+            return this.request<ClaimFeesResult>('/fees/submit', {
+                method: 'POST',
+                body: JSON.stringify({ signedTransaction: signedBase64, mintAddress }),
+            });
+        } catch (error: any) {
+            return { success: false, error: `Signing failed: ${error.message}` };
+        }
     }
 
     /**

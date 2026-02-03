@@ -1,6 +1,6 @@
 # VELOCITI SDK
 
-Official SDK for deploying and managing tax tokens on [VELOCITI](https://velociti.xyz) - the Solana Token-2022 launchpad with built-in transfer taxes.
+Official SDK for deploying and managing tax tokens on [VELOCITI](https://velociti.fun) - the Solana Token-2022 launchpad with built-in transfer taxes.
 
 ## Features
 
@@ -23,7 +23,7 @@ yarn add @velociti/sdk
 import { VelocitiClient } from '@velociti/sdk';
 
 const client = new VelocitiClient({
-  apiKey: 'your-api-key', // Get at velociti.xyz/developers
+  apiKey: 'your-api-key', // Get at velociti.fun/developers
   network: 'mainnet'      // or 'devnet'
 });
 
@@ -130,15 +130,15 @@ console.log(`${rateLimit.remaining}/${rateLimit.limit} remaining`);
 
 ## Get Your API Key
 
-1. Visit [velociti.xyz/developers](https://velociti.xyz/developers)
+1. Visit [velociti.fun/developers](https://velociti.fun/developers)
 2. Fill out the access request form
 3. Wait for approval (usually within 24 hours)
 4. Receive your API key via email
 
 ## Links
 
-- [VELOCITI Website](https://velociti.xyz)
-- [Documentation](https://docs.velociti.xyz)
+- [VELOCITI Website](https://velociti.fun)
+- [Documentation](https://docs.velociti.fun)
 - [Twitter](https://twitter.com/velocitixyz)
 - [Discord](https://discord.gg/velociti)
 

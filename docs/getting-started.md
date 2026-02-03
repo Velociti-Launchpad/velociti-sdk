@@ -10,7 +10,7 @@ This guide will help you set up and deploy your first token using the VELOCITI S
 
 ## Step 1: Get Your API Key
 
-1. Visit [velociti.xyz/developers](https://velociti.xyz/developers)
+1. Visit [velociti.fun/developers](https://velociti.fun/developers)
 2. Fill out the access request form with:
    - Your name and email
    - Project name and description
