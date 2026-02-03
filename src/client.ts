@@ -19,7 +19,7 @@ import {
 } from './types';
 
 const DEFAULT_MAINNET_URL = 'https://velociti.fun/api/sdk';
-const DEFAULT_DEVNET_URL = 'https://devnet.velociti.fun/api/sdk';
+const DEFAULT_DEVNET_URL = 'https://velociti.fun/api/sdk'; // Same URL, network param handled internally
 
 export class VelocitiClient {
     private apiKey: string;
@@ -36,7 +36,7 @@ export class VelocitiClient {
         }
 
         this.apiKey = config.apiKey;
-        this.network = config.network || 'mainnet';
+        this.network = config.network || 'devnet';
         this.baseUrl = config.baseUrl ||
             (this.network === 'mainnet' ? DEFAULT_MAINNET_URL : DEFAULT_DEVNET_URL);
 

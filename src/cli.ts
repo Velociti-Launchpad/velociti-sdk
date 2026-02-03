@@ -148,7 +148,7 @@ async function deploy(args: Record<string, string | boolean>) {
     const symbol = args.symbol as string;
     const description = args.description as string || '';
     const taxRate = parseFloat(args.tax as string) || 5;
-    const network = (args.network as string) === 'devnet' ? 'devnet' : 'mainnet';
+    const network = (args.network as string) === 'mainnet' ? 'mainnet' : 'devnet';
 
     if (!name || !symbol) {
         error('Missing required arguments: --name and --symbol');
@@ -204,7 +204,7 @@ async function listTokens(args: Record<string, string | boolean>) {
         process.exit(1);
     }
 
-    const network = (args.network as string) === 'devnet' ? 'devnet' : 'mainnet';
+    const network = (args.network as string) === 'mainnet' ? 'mainnet' : 'devnet';
     const client = new VelocitiClient({ apiKey, network });
 
     info('Fetching your tokens...');
@@ -243,7 +243,7 @@ async function analytics(args: Record<string, string | boolean>) {
         process.exit(1);
     }
 
-    const network = (args.network as string) === 'devnet' ? 'devnet' : 'mainnet';
+    const network = (args.network as string) === 'mainnet' ? 'mainnet' : 'devnet';
     const client = new VelocitiClient({ apiKey, network });
 
     info(`Fetching analytics for ${mintAddress}...`);
@@ -290,7 +290,7 @@ ${colors.bright}Commands:${colors.reset}
              --symbol "SYM"         (required)
              --description "..."    (optional)
              --tax 5                (optional, default: 5%)
-             --network mainnet      (optional, default: mainnet)
+             --network devnet        (optional, default: devnet)
              --wallet path/to/key   (optional)
 
   ${colors.cyan}tokens${colors.reset}     List your deployed tokens

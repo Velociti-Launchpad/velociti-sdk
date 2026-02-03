@@ -29,7 +29,7 @@ import { VelocitiClient } from './client';
 import { DeployTokenParams, TokenInfo, TokenAnalytics, ApiResponse, SubmitResult } from './types';
 
 // React hook for token deployment
-export function useVelocitiDeploy(apiKey: string, network: 'mainnet' | 'devnet' = 'mainnet') {
+export function useVelocitiDeploy(apiKey: string, network: 'mainnet' | 'devnet' = 'devnet') {
     let loading = false;
     let error: string | null = null;
     let result: SubmitResult | null = null;
@@ -90,7 +90,7 @@ export function useVelocitiDeploy(apiKey: string, network: 'mainnet' | 'devnet' 
 }
 
 // React hook for fetching token info
-export function useVelocitiToken(apiKey: string, mintAddress: string, network: 'mainnet' | 'devnet' = 'mainnet') {
+export function useVelocitiToken(apiKey: string, mintAddress: string, network: 'mainnet' | 'devnet' = 'devnet') {
     let loading = false;
     let error: string | null = null;
     let token: TokenInfo | null = null;
@@ -132,7 +132,7 @@ export function useVelocitiToken(apiKey: string, mintAddress: string, network: '
 }
 
 // React hook for token analytics
-export function useVelocitiAnalytics(apiKey: string, mintAddress: string, network: 'mainnet' | 'devnet' = 'mainnet') {
+export function useVelocitiAnalytics(apiKey: string, mintAddress: string, network: 'mainnet' | 'devnet' = 'devnet') {
     let loading = false;
     let error: string | null = null;
     let analytics: TokenAnalytics | null = null;
@@ -169,7 +169,7 @@ export function useVelocitiAnalytics(apiKey: string, mintAddress: string, networ
 }
 
 // React hook for listing user's tokens
-export function useVelocitiMyTokens(apiKey: string, network: 'mainnet' | 'devnet' = 'mainnet') {
+export function useVelocitiMyTokens(apiKey: string, network: 'mainnet' | 'devnet' = 'devnet') {
     let loading = false;
     let error: string | null = null;
     let tokens: TokenInfo[] = [];
