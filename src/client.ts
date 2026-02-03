@@ -73,14 +73,14 @@ export class VelocitiClient {
         }
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
+            const errorData = await response.json().catch(() => ({})) as { error?: string };
             return {
                 success: false,
                 error: errorData.error || `HTTP ${response.status}: ${response.statusText}`,
             };
         }
 
-        const data = await response.json();
+        const data = await response.json() as T;
         return { success: true, data };
     }
 
