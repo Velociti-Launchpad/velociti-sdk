@@ -26,3 +26,16 @@ export * from './types';
 
 // React hooks (for client-side use)
 export * from './react';
+
+// Real-time streaming
+export { VelocitiStream, getStream } from './stream';
+export type {
+    StreamTopic,
+    StreamEvent,
+    PriceUpdate,
+    TradeUpdate,
+    CommentUpdate,
+    PortfolioUpdate,
+    TrendingUpdate,
+    VelocitiStreamConfig
+} from './stream';
