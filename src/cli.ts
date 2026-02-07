@@ -127,7 +127,7 @@ function saveApiKey(apiKey: string) {
         config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     }
     config.apiKey = apiKey;
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), { mode: 0o600 });
 }
 
 // Commands

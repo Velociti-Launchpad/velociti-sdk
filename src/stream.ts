@@ -127,6 +127,8 @@ export class VelocitiStream {
     private reconnectAttempts = 0;
     private isConnecting = false;
     private isConnected = false;
+    private sessionToken: string | null = null;
+    private sessionExpiresAt = 0;
 
     constructor(config: VelocitiStreamConfig = {}) {
         this.config = {
@@ -147,6 +149,17 @@ export class VelocitiStream {
         }
 
         this.isConnecting = true;
+
+        try {
+            // SECURITY FIX M-6: Exchange API key for session token before connecting
+            // This avoids exposing the API key in the SSE URL query string
+            if (this.config.apiKey && !this.hasValidSession()) {
+                await this.acquireSessionToken();
+            }
+        } catch (error) {
+            this.isConnecting = false;
+            throw error;
+        }
 
         return new Promise((resolve, reject) => {
             try {
@@ -188,7 +201,14 @@ export class VelocitiStream {
                     if (this.config.autoReconnect &&
                         this.reconnectAttempts < this.config.maxReconnectAttempts) {
                         this.reconnectAttempts++;
-                        setTimeout(() => this.connect(), this.config.reconnectDelay);
+                        // Refresh session token on reconnect if expired
+                        if (!this.hasValidSession()) {
+                            this.acquireSessionToken()
+                                .then(() => this.connect())
+                                .catch(() => reject(err));
+                        } else {
+                            setTimeout(() => this.connect(), this.config.reconnectDelay);
+                        }
                     } else if (!this.isConnected) {
                         reject(err);
                     }
@@ -328,10 +348,43 @@ export class VelocitiStream {
     private buildStreamUrl(): string {
         const topics = Array.from(this.topics).join(',');
         const params = new URLSearchParams({ topics });
-        if (this.config.apiKey) {
-            params.set('apiKey', this.config.apiKey);
+        // SECURITY FIX M-6: Use session token instead of raw API key in URL
+        if (this.sessionToken) {
+            params.set('session', this.sessionToken);
         }
         return `${this.config.baseUrl}?${params.toString()}`;
+    }
+
+    /**
+     * Exchange API key for a short-lived session token.
+     * The session token is safe to pass in SSE URL query parameters.
+     */
+    private async acquireSessionToken(): Promise<void> {
+        const authUrl = this.config.baseUrl.replace(/\/stream$/, '/sdk/auth/session');
+        const response = await fetch(authUrl, {
+            method: 'POST',
+            headers: {
+                'X-API-Key': this.config.apiKey,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(`Session token exchange failed: ${body.error || response.statusText}`);
+        }
+
+        const { sessionToken, expiresAt } = await response.json();
+        this.sessionToken = sessionToken;
+        this.sessionExpiresAt = expiresAt;
+    }
+
+    /**
+     * Check if the current session token is still valid (with 5min buffer)
+     */
+    private hasValidSession(): boolean {
+        if (!this.sessionToken) return false;
+        return Date.now() < this.sessionExpiresAt - 5 * 60 * 1000; // 5min buffer
     }
 
     private reconnect(): void {

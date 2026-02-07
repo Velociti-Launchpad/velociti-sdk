@@ -25,58 +25,59 @@
  * }
  */
 
+import { useState, useCallback, useMemo } from 'react';
 import { VelocitiClient } from './client';
 import { DeployTokenParams, TokenInfo, TokenAnalytics, ApiResponse, SubmitResult } from './types';
 
 // React hook for token deployment
 export function useVelocitiDeploy(apiKey: string, network: 'mainnet' | 'devnet' = 'devnet') {
-    let loading = false;
-    let error: string | null = null;
-    let result: SubmitResult | null = null;
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [result, setResult] = useState<SubmitResult | null>(null);
 
-    const client = new VelocitiClient({ apiKey, network });
+    const client = useMemo(() => new VelocitiClient({ apiKey, network }), [apiKey, network]);
 
-    async function deploy(
+    const deploy = useCallback(async (
         params: DeployTokenParams,
         signTransaction: (transaction: Uint8Array) => Promise<Uint8Array>
-    ): Promise<ApiResponse<SubmitResult>> {
-        loading = true;
-        error = null;
+    ): Promise<ApiResponse<SubmitResult>> => {
+        setLoading(true);
+        setError(null);
 
         try {
             const response = await client.deployToken(params, signTransaction);
             if (response.success && response.data) {
-                result = response.data;
+                setResult(response.data);
             } else {
-                error = response.error || 'Unknown error';
+                setError(response.error || 'Unknown error');
             }
             return response;
         } catch (e) {
             const message = e instanceof Error ? e.message : 'Unknown error';
-            error = message;
+            setError(message);
             return { success: false, error: message };
         } finally {
-            loading = false;
+            setLoading(false);
         }
-    }
+    }, [client]);
 
-    async function prepareTransaction(params: DeployTokenParams) {
-        loading = true;
+    const prepareTransaction = useCallback(async (params: DeployTokenParams) => {
+        setLoading(true);
         try {
             return await client.prepareTokenDeploy(params);
         } finally {
-            loading = false;
+            setLoading(false);
         }
-    }
+    }, [client]);
 
-    async function submitTransaction(signedTransaction: string) {
-        loading = true;
+    const submitTransaction = useCallback(async (signedTransaction: string) => {
+        setLoading(true);
         try {
             return await client.submitTransaction(signedTransaction);
         } finally {
-            loading = false;
+            setLoading(false);
         }
-    }
+    }, [client]);
 
     return {
         deploy,
@@ -91,36 +92,36 @@ export function useVelocitiDeploy(apiKey: string, network: 'mainnet' | 'devnet' 
 
 // React hook for fetching token info
 export function useVelocitiToken(apiKey: string, mintAddress: string, network: 'mainnet' | 'devnet' = 'devnet') {
-    let loading = false;
-    let error: string | null = null;
-    let token: TokenInfo | null = null;
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [token, setToken] = useState<TokenInfo | null>(null);
 
-    const client = new VelocitiClient({ apiKey, network });
+    const client = useMemo(() => new VelocitiClient({ apiKey, network }), [apiKey, network]);
 
-    async function fetch(): Promise<TokenInfo | null> {
-        loading = true;
-        error = null;
+    const fetch = useCallback(async (): Promise<TokenInfo | null> => {
+        setLoading(true);
+        setError(null);
 
         try {
             const response = await client.getToken(mintAddress);
             if (response.success && response.data) {
-                token = response.data;
-                return token;
+                setToken(response.data);
+                return response.data;
             } else {
-                error = response.error || 'Failed to fetch token';
+                setError(response.error || 'Failed to fetch token');
                 return null;
             }
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Unknown error';
+            setError(e instanceof Error ? e.message : 'Unknown error');
             return null;
         } finally {
-            loading = false;
+            setLoading(false);
         }
-    }
+    }, [client, mintAddress]);
 
-    async function refresh() {
+    const refresh = useCallback(async () => {
         return fetch();
-    }
+    }, [fetch]);
 
     return {
         fetch,
@@ -133,32 +134,32 @@ export function useVelocitiToken(apiKey: string, mintAddress: string, network: '
 
 // React hook for token analytics
 export function useVelocitiAnalytics(apiKey: string, mintAddress: string, network: 'mainnet' | 'devnet' = 'devnet') {
-    let loading = false;
-    let error: string | null = null;
-    let analytics: TokenAnalytics | null = null;
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [analytics, setAnalytics] = useState<TokenAnalytics | null>(null);
 
-    const client = new VelocitiClient({ apiKey, network });
+    const client = useMemo(() => new VelocitiClient({ apiKey, network }), [apiKey, network]);
 
-    async function fetch(): Promise<TokenAnalytics | null> {
-        loading = true;
-        error = null;
+    const fetch = useCallback(async (): Promise<TokenAnalytics | null> => {
+        setLoading(true);
+        setError(null);
 
         try {
             const response = await client.getTokenAnalytics(mintAddress);
             if (response.success && response.data) {
-                analytics = response.data;
-                return analytics;
+                setAnalytics(response.data);
+                return response.data;
             } else {
-                error = response.error || 'Failed to fetch analytics';
+                setError(response.error || 'Failed to fetch analytics');
                 return null;
             }
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Unknown error';
+            setError(e instanceof Error ? e.message : 'Unknown error');
             return null;
         } finally {
-            loading = false;
+            setLoading(false);
         }
-    }
+    }, [client, mintAddress]);
 
     return {
         fetch,
@@ -170,32 +171,32 @@ export function useVelocitiAnalytics(apiKey: string, mintAddress: string, networ
 
 // React hook for listing user's tokens
 export function useVelocitiMyTokens(apiKey: string, network: 'mainnet' | 'devnet' = 'devnet') {
-    let loading = false;
-    let error: string | null = null;
-    let tokens: TokenInfo[] = [];
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [tokens, setTokens] = useState<TokenInfo[]>([]);
 
-    const client = new VelocitiClient({ apiKey, network });
+    const client = useMemo(() => new VelocitiClient({ apiKey, network }), [apiKey, network]);
 
-    async function fetch(): Promise<TokenInfo[]> {
-        loading = true;
-        error = null;
+    const fetch = useCallback(async (): Promise<TokenInfo[]> => {
+        setLoading(true);
+        setError(null);
 
         try {
             const response = await client.getMyTokens();
             if (response.success && response.data) {
-                tokens = response.data;
-                return tokens;
+                setTokens(response.data);
+                return response.data;
             } else {
-                error = response.error || 'Failed to fetch tokens';
+                setError(response.error || 'Failed to fetch tokens');
                 return [];
             }
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Unknown error';
+            setError(e instanceof Error ? e.message : 'Unknown error');
             return [];
         } finally {
-            loading = false;
+            setLoading(false);
         }
-    }
+    }, [client]);
 
     return {
         fetch,
@@ -207,36 +208,37 @@ export function useVelocitiMyTokens(apiKey: string, network: 'mainnet' | 'devnet
 
 // React hook for fee claiming
 export function useVelocitiFees(apiKey: string, mintAddress: string, network: 'mainnet' | 'devnet' = 'mainnet') {
-    let loading = false;
-    let error: string | null = null;
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const client = new VelocitiClient({ apiKey, network });
+    const client = useMemo(() => new VelocitiClient({ apiKey, network }), [apiKey, network]);
 
-    async function getUnclaimedFees() {
-        loading = true;
+    const getUnclaimedFees = useCallback(async () => {
+        setLoading(true);
         try {
             return await client.getUnclaimedFees(mintAddress);
         } finally {
-            loading = false;
+            setLoading(false);
         }
-    }
+    }, [client, mintAddress]);
 
-    async function claim(
+    const claim = useCallback(async (
         walletAddress: string,
         signTransaction: (transaction: Uint8Array) => Promise<Uint8Array>
-    ) {
-        loading = true;
-        error = null;
+    ) => {
+        setLoading(true);
+        setError(null);
 
         try {
             return await client.claimFees(mintAddress, walletAddress, signTransaction);
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Unknown error';
-            return { success: false, error };
+            const message = e instanceof Error ? e.message : 'Unknown error';
+            setError(message);
+            return { success: false, error: message };
         } finally {
-            loading = false;
+            setLoading(false);
         }
-    }
+    }, [client, mintAddress]);
 
     return {
         getUnclaimedFees,
