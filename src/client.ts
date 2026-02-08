@@ -16,6 +16,20 @@ import {
     BatchDeployResult,
     TokenAnalytics,
     WebhookConfig,
+    PerpsMarketInfo,
+    PerpsOracleData,
+    PerpsPosition,
+    OpenPerpsPositionParams,
+    ClosePerpsPositionParams,
+    LimitOrder,
+    CreateLimitOrderParams,
+    PredictionMarket,
+    PredictionBet,
+    PlacePredictionBetParams,
+    CreatePredictionMarketParams,
+    LeaderboardTrader,
+    WalletFollow,
+    FollowTraderParams,
 } from './types';
 
 const DEFAULT_MAINNET_URL = 'https://velociti.fun/api/sdk';
@@ -370,5 +384,227 @@ export class VelocitiClient {
      */
     async validateApiKey(): Promise<ApiResponse<{ valid: boolean; tier: string }>> {
         return this.request('/auth/validate');
+    }
+
+    // ============================================
+    // PERPETUALS (PERCOLATOR)
+    // ============================================
+
+    /**
+     * Get perps market info for a token (oracle, stats, enabled status)
+     */
+    async getPerpsMarket(mintAddress: string): Promise<ApiResponse<PerpsMarketInfo>> {
+        return this.request<PerpsMarketInfo>(`/perps/${mintAddress}/market`);
+    }
+
+    /**
+     * Get oracle price feed data for a token
+     */
+    async getPerpsOracleData(mintAddress: string): Promise<ApiResponse<PerpsOracleData>> {
+        return this.request<PerpsOracleData>(`/perps/${mintAddress}/oracle`);
+    }
+
+    /**
+     * Get all open perps positions for a wallet on a given token
+     */
+    async getPerpsPositions(
+        mintAddress: string,
+        walletAddress: string
+    ): Promise<ApiResponse<PerpsPosition[]>> {
+        return this.request<PerpsPosition[]>(
+            `/perps/${mintAddress}/positions?wallet=${walletAddress}`
+        );
+    }
+
+    /**
+     * Prepare a transaction to open a perps position
+     */
+    async prepareOpenPosition(
+        params: OpenPerpsPositionParams
+    ): Promise<ApiResponse<PreparedTransaction>> {
+        if (params.leverage < 1 || params.leverage > 10) {
+            return { success: false, error: 'Leverage must be between 1 and 10' };
+        }
+        if (params.collateralAmount <= 0) {
+            return { success: false, error: 'Collateral amount must be positive' };
+        }
+        return this.request<PreparedTransaction>('/perps/position/open', {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+    }
+
+    /**
+     * Prepare a transaction to close a perps position
+     */
+    async prepareClosePosition(
+        params: ClosePerpsPositionParams
+    ): Promise<ApiResponse<PreparedTransaction>> {
+        return this.request<PreparedTransaction>('/perps/position/close', {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+    }
+
+    /**
+     * Open a perps position (prepare + sign + submit)
+     */
+    async openPosition(
+        params: OpenPerpsPositionParams,
+        signTransaction: (transaction: Uint8Array) => Promise<Uint8Array>
+    ): Promise<ApiResponse<SubmitResult>> {
+        const prepared = await this.prepareOpenPosition(params);
+        if (!prepared.success || !prepared.data) {
+            return { success: false, error: prepared.error || 'Failed to prepare position' };
+        }
+
+        try {
+            const txBytes = Uint8Array.from(atob(prepared.data.transaction), (c: string) => c.charCodeAt(0));
+            const signedBytes = await signTransaction(txBytes);
+            const signedBase64 = btoa(String.fromCharCode(...signedBytes));
+            return this.submitTransaction(signedBase64);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            return { success: false, error: `Signing failed: ${message}` };
+        }
+    }
+
+    /**
+     * Close a perps position (prepare + sign + submit)
+     */
+    async closePosition(
+        params: ClosePerpsPositionParams,
+        signTransaction: (transaction: Uint8Array) => Promise<Uint8Array>
+    ): Promise<ApiResponse<SubmitResult>> {
+        const prepared = await this.prepareClosePosition(params);
+        if (!prepared.success || !prepared.data) {
+            return { success: false, error: prepared.error || 'Failed to prepare close' };
+        }
+
+        try {
+            const txBytes = Uint8Array.from(atob(prepared.data.transaction), (c: string) => c.charCodeAt(0));
+            const signedBytes = await signTransaction(txBytes);
+            const signedBase64 = btoa(String.fromCharCode(...signedBytes));
+            return this.submitTransaction(signedBase64);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            return { success: false, error: `Signing failed: ${message}` };
+        }
+    }
+
+    // ============================================
+    // LIMIT ORDERS & STOP-LOSSES
+    // ============================================
+
+    /** Create a limit order or stop-loss */
+    async createLimitOrder(params: CreateLimitOrderParams): Promise<ApiResponse<LimitOrder>> {
+        return this.request<LimitOrder>('/orders', {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+    }
+
+    /** List limit orders for a wallet */
+    async getLimitOrders(
+        walletAddress: string,
+        mintAddress?: string,
+        status: string = 'open'
+    ): Promise<ApiResponse<{ orders: LimitOrder[]; total: number }>> {
+        let url = `/orders?wallet=${walletAddress}&status=${status}`;
+        if (mintAddress) url += `&mint=${mintAddress}`;
+        return this.request(url);
+    }
+
+    /** Get a single limit order */
+    async getLimitOrder(orderId: string): Promise<ApiResponse<LimitOrder>> {
+        return this.request<LimitOrder>(`/orders/${orderId}`);
+    }
+
+    /** Cancel a limit order */
+    async cancelLimitOrder(orderId: string, walletAddress: string): Promise<ApiResponse<{ success: boolean }>> {
+        return this.request(`/orders/${orderId}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ walletAddress }),
+        });
+    }
+
+    // ============================================
+    // PREDICTIONS MARKET
+    // ============================================
+
+    /** Create a new prediction market */
+    async createPredictionMarket(params: CreatePredictionMarketParams): Promise<ApiResponse<PredictionMarket>> {
+        return this.request<PredictionMarket>('/predictions', {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+    }
+
+    /** List prediction markets for a token */
+    async getPredictionMarkets(
+        mintAddress?: string,
+        status: string = 'open'
+    ): Promise<ApiResponse<{ markets: PredictionMarket[] }>> {
+        let url = `/predictions?status=${status}`;
+        if (mintAddress) url += `&mint=${mintAddress}`;
+        return this.request(url);
+    }
+
+    /** Get prediction market details with bets */
+    async getPredictionMarket(marketId: string): Promise<ApiResponse<PredictionMarket & { bets: PredictionBet[] }>> {
+        return this.request(`/predictions/${marketId}`);
+    }
+
+    /** Place a bet on a prediction market */
+    async placePredictionBet(params: PlacePredictionBetParams): Promise<ApiResponse<PredictionBet>> {
+        return this.request<PredictionBet>(`/predictions/${params.marketId}`, {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+    }
+
+    /** Claim winnings from a resolved prediction */
+    async claimPredictionWinnings(marketId: string, walletAddress: string): Promise<ApiResponse<{ payout: number }>> {
+        return this.request(`/predictions/${marketId}/claim`, {
+            method: 'POST',
+            body: JSON.stringify({ walletAddress }),
+        });
+    }
+
+    // ============================================
+    // SOCIAL / COPY-TRADING
+    // ============================================
+
+    /** Follow a trader for copy-trading */
+    async followTrader(params: FollowTraderParams): Promise<ApiResponse<WalletFollow>> {
+        return this.request<WalletFollow>('/copy-trade/follow', {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+    }
+
+    /** Unfollow a trader */
+    async unfollowTrader(followerWallet: string, leaderWallet: string): Promise<ApiResponse<{ success: boolean }>> {
+        return this.request('/copy-trade/follow', {
+            method: 'DELETE',
+            body: JSON.stringify({ followerWallet, leaderWallet }),
+        });
+    }
+
+    /** Get trading leaderboard */
+    async getLeaderboard(
+        sortBy: string = 'volume',
+        period: string = '7d',
+        limit: number = 20
+    ): Promise<ApiResponse<{ leaderboard: LeaderboardTrader[] }>> {
+        return this.request(`/copy-trade/leaderboard?sort=${sortBy}&period=${period}&limit=${limit}`);
+    }
+
+    /** Get follows for a wallet */
+    async getFollows(
+        walletAddress: string,
+        mode: 'following' | 'followers' = 'following'
+    ): Promise<ApiResponse<{ follows: WalletFollow[] }>> {
+        return this.request(`/copy-trade/follow?wallet=${walletAddress}&mode=${mode}`);
     }
 }

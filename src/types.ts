@@ -208,3 +208,224 @@ export interface RateLimitInfo {
     /** Reset timestamp (Unix ms) */
     reset: number;
 }
+
+// ─── Perpetuals (Percolator) Types ──────────────────────────
+
+/** Oracle price feed data from the VELOCITI Oracle */
+export interface PerpsOracleData {
+    /** Token mint address */
+    mint: string;
+    /** Spot price × 1e6 */
+    priceE6: number;
+    /** Time-weighted average price × 1e6 */
+    twapE6: number;
+    /** Price confidence interval × 1e6 */
+    confidenceE6: number;
+    /** Last update slot */
+    lastUpdateSlot: number;
+    /** Last update Unix timestamp */
+    lastUpdateTs: number;
+    /** Number of price updates */
+    numUpdates: number;
+    /** Whether the feed is currently active */
+    isActive: boolean;
+}
+
+/** Real-time market statistics for a perps market */
+export interface PerpsMarketStats {
+    /** Total open interest in SOL */
+    openInterest: number;
+    /** 24-hour trading volume in SOL */
+    volume24h: number;
+    /** Current funding rate (positive = longs pay shorts) */
+    fundingRate: number;
+    /** Insurance fund balance in SOL */
+    insuranceFund: number;
+    /** Percentage of open interest that is long (0-100) */
+    longRatio: number;
+}
+
+/** An open perpetual futures position */
+export interface PerpsPosition {
+    /** Unique position identifier */
+    id: string;
+    /** Token mint address */
+    mintAddress: string;
+    /** Position direction */
+    side: 'long' | 'short';
+    /** Position size in SOL */
+    size: number;
+    /** Entry price in SOL */
+    entryPrice: number;
+    /** Current mark price in SOL */
+    currentPrice: number;
+    /** Leverage multiplier */
+    leverage: number;
+    /** Unrealised PnL in SOL */
+    pnl: number;
+    /** Unrealised PnL as percentage of margin */
+    pnlPercent: number;
+    /** Estimated liquidation price */
+    liquidationPrice: number;
+    /** Collateral / margin in SOL */
+    margin: number;
+    /** Position open timestamp (Unix ms) */
+    timestamp: number;
+}
+
+/** Parameters for opening a perps position */
+export interface OpenPerpsPositionParams {
+    /** Token mint address */
+    mintAddress: string;
+    /** Position direction */
+    side: 'long' | 'short';
+    /** Leverage multiplier (1-10) */
+    leverage: number;
+    /** Collateral amount in SOL */
+    collateralAmount: number;
+    /** Max slippage percentage (default 0.5) */
+    slippage?: number;
+    /** Wallet address of the trader */
+    walletAddress: string;
+}
+
+/** Parameters for closing a perps position */
+export interface ClosePerpsPositionParams {
+    /** Position ID to close */
+    positionId: string;
+    /** Token mint address */
+    mintAddress: string;
+    /** Wallet address of the trader */
+    walletAddress: string;
+}
+
+/** Aggregated perps market information */
+export interface PerpsMarketInfo {
+    /** Whether perps are enabled for this token */
+    enabled: boolean;
+    /** Oracle data (null if not active) */
+    oracle: PerpsOracleData | null;
+    /** Market statistics */
+    stats: PerpsMarketStats;
+    /** Maximum allowed leverage */
+    maxLeverage: number;
+    /** Trading fee in basis points */
+    feeBps: number;
+}
+
+// ─── Limit Orders & Stop-Losses ──────────────────────────────
+
+/** A limit order or stop-loss on the bonding curve */
+export interface LimitOrder {
+    id: string;
+    mintAddress: string;
+    walletAddress: string;
+    type: 'limit_buy' | 'limit_sell' | 'stop_loss' | 'take_profit';
+    side: 'buy' | 'sell';
+    triggerPrice: number;
+    amount: number;
+    status: 'open' | 'filled' | 'cancelled' | 'expired';
+    signature?: string | null;
+    filledAt?: string | null;
+    expiresAt?: string | null;
+    createdAt: string;
+    token?: { name: string; symbol: string; price: number; imageUrl?: string };
+}
+
+/** Parameters for creating a limit order */
+export interface CreateLimitOrderParams {
+    mintAddress: string;
+    walletAddress: string;
+    type: 'limit_buy' | 'limit_sell' | 'stop_loss' | 'take_profit';
+    triggerPrice: number;
+    amount: number;
+    /** Expiry in seconds (default: 7 days) */
+    expiresIn?: number;
+}
+
+// ─── Predictions Market ──────────────────────────────────────
+
+/** A binary prediction market on a token milestone */
+export interface PredictionMarket {
+    id: string;
+    mintAddress: string;
+    question: string;
+    type: 'graduation' | 'price_target' | 'volume_target';
+    targetValue: number | null;
+    deadline: string;
+    yesPool: number;
+    noPool: number;
+    totalPool: number;
+    betCount: number;
+    status: 'open' | 'resolved_yes' | 'resolved_no' | 'cancelled';
+    odds: { yes: number; no: number };
+    token?: { name: string; symbol: string; price: number; imageUrl?: string };
+    createdAt: string;
+    resolvedAt?: string | null;
+}
+
+/** A bet on a prediction market */
+export interface PredictionBet {
+    id: string;
+    marketId: string;
+    walletAddress: string;
+    side: 'yes' | 'no';
+    amount: number;
+    payout: number;
+    claimed: boolean;
+    createdAt: string;
+}
+
+/** Parameters for placing a prediction bet */
+export interface PlacePredictionBetParams {
+    marketId: string;
+    walletAddress: string;
+    side: 'yes' | 'no';
+    amount: number;
+}
+
+/** Parameters for creating a prediction market */
+export interface CreatePredictionMarketParams {
+    mintAddress: string;
+    walletAddress: string;
+    type: 'graduation' | 'price_target' | 'volume_target';
+    question: string;
+    targetValue?: number;
+    deadlineHours?: number;
+}
+
+// ─── Social / Copy-Trading ───────────────────────────────────
+
+/** Leaderboard trader stats */
+export interface LeaderboardTrader {
+    rank: number;
+    wallet: string;
+    walletShort: string;
+    tradeCount: number;
+    totalVolume: number;
+    followers: number;
+    pnl?: number;
+    winRate?: number;
+}
+
+/** A wallet follow relationship */
+export interface WalletFollow {
+    id: string;
+    followerWallet: string;
+    leaderWallet: string;
+    maxTradeSize: number;
+    scaleFactor: number;
+    totalCopied: number;
+    totalPnl: number;
+    active: boolean;
+    createdAt: string;
+}
+
+/** Parameters for following a trader */
+export interface FollowTraderParams {
+    followerWallet: string;
+    leaderWallet: string;
+    maxTradeSize?: number;
+    scaleFactor?: number;
+}
+

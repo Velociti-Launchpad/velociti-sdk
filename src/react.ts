@@ -27,7 +27,26 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { VelocitiClient } from './client';
-import { DeployTokenParams, TokenInfo, TokenAnalytics, ApiResponse, SubmitResult } from './types';
+import {
+    DeployTokenParams,
+    TokenInfo,
+    TokenAnalytics,
+    ApiResponse,
+    SubmitResult,
+    PerpsMarketInfo,
+    PerpsOracleData,
+    PerpsPosition,
+    OpenPerpsPositionParams,
+    ClosePerpsPositionParams,
+    LimitOrder,
+    CreateLimitOrderParams,
+    PredictionMarket,
+    CreatePredictionMarketParams,
+    LeaderboardTrader,
+    WalletFollow,
+    FollowTraderParams,
+} from './types';
+
 
 // React hook for token deployment
 export function useVelocitiDeploy(apiKey: string, network: 'mainnet' | 'devnet' = 'devnet') {
@@ -246,4 +265,279 @@ export function useVelocitiFees(apiKey: string, mintAddress: string, network: 'm
         loading,
         error,
     };
+}
+
+// React hook for perpetual futures trading
+export function useVelocitiPerps(apiKey: string, mintAddress: string, network: 'mainnet' | 'devnet' = 'devnet') {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [market, setMarket] = useState<PerpsMarketInfo | null>(null);
+    const [oracle, setOracle] = useState<PerpsOracleData | null>(null);
+    const [positions, setPositions] = useState<PerpsPosition[]>([]);
+
+    const client = useMemo(() => new VelocitiClient({ apiKey, network }), [apiKey, network]);
+
+    const fetchMarket = useCallback(async (): Promise<PerpsMarketInfo | null> => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await client.getPerpsMarket(mintAddress);
+            if (response.success && response.data) {
+                setMarket(response.data);
+                return response.data;
+            } else {
+                setError(response.error || 'Failed to fetch perps market');
+                return null;
+            }
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Unknown error');
+            return null;
+        } finally {
+            setLoading(false);
+        }
+    }, [client, mintAddress]);
+
+    const fetchOracle = useCallback(async (): Promise<PerpsOracleData | null> => {
+        try {
+            const response = await client.getPerpsOracleData(mintAddress);
+            if (response.success && response.data) {
+                setOracle(response.data);
+                return response.data;
+            }
+            return null;
+        } catch {
+            return null;
+        }
+    }, [client, mintAddress]);
+
+    const fetchPositions = useCallback(async (walletAddress: string): Promise<PerpsPosition[]> => {
+        setLoading(true);
+        try {
+            const response = await client.getPerpsPositions(mintAddress, walletAddress);
+            if (response.success && response.data) {
+                setPositions(response.data);
+                return response.data;
+            }
+            return [];
+        } catch {
+            return [];
+        } finally {
+            setLoading(false);
+        }
+    }, [client, mintAddress]);
+
+    const openPosition = useCallback(async (
+        params: OpenPerpsPositionParams,
+        signTransaction: (transaction: Uint8Array) => Promise<Uint8Array>
+    ) => {
+        setLoading(true);
+        setError(null);
+        try {
+            return await client.openPosition(params, signTransaction);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : 'Unknown error';
+            setError(message);
+            return { success: false, error: message };
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    const closePosition = useCallback(async (
+        params: ClosePerpsPositionParams,
+        signTransaction: (transaction: Uint8Array) => Promise<Uint8Array>
+    ) => {
+        setLoading(true);
+        setError(null);
+        try {
+            return await client.closePosition(params, signTransaction);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : 'Unknown error';
+            setError(message);
+            return { success: false, error: message };
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    return {
+        fetchMarket,
+        fetchOracle,
+        fetchPositions,
+        openPosition,
+        closePosition,
+        market,
+        oracle,
+        positions,
+        loading,
+        error,
+    };
+}
+
+// React hook for limit orders & stop-losses
+export function useVelocitiLimitOrders(apiKey: string, network: 'mainnet' | 'devnet' = 'devnet') {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [orders, setOrders] = useState<LimitOrder[]>([]);
+
+    const client = useMemo(() => new VelocitiClient({ apiKey, network }), [apiKey, network]);
+
+    const createOrder = useCallback(async (params: CreateLimitOrderParams) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await client.createLimitOrder(params);
+            if (!response.success) setError(response.error || 'Failed to create order');
+            return response;
+        } catch (e) {
+            const message = e instanceof Error ? e.message : 'Unknown error';
+            setError(message);
+            return { success: false, error: message };
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    const cancelOrder = useCallback(async (orderId: string, walletAddress: string) => {
+        setLoading(true);
+        try {
+            return await client.cancelLimitOrder(orderId, walletAddress);
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    const fetchOrders = useCallback(async (walletAddress: string, mintAddress?: string) => {
+        setLoading(true);
+        try {
+            const response = await client.getLimitOrders(walletAddress, mintAddress);
+            if (response.success && response.data) {
+                setOrders(response.data.orders);
+            }
+            return response;
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    return { createOrder, cancelOrder, fetchOrders, orders, loading, error };
+}
+
+// React hook for prediction markets
+export function useVelocitiPredictions(apiKey: string, network: 'mainnet' | 'devnet' = 'devnet') {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [markets, setMarkets] = useState<PredictionMarket[]>([]);
+
+    const client = useMemo(() => new VelocitiClient({ apiKey, network }), [apiKey, network]);
+
+    const createMarket = useCallback(async (params: CreatePredictionMarketParams) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await client.createPredictionMarket(params);
+            if (!response.success) setError(response.error || 'Failed to create market');
+            return response;
+        } catch (e) {
+            const message = e instanceof Error ? e.message : 'Unknown error';
+            setError(message);
+            return { success: false, error: message };
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    const fetchMarkets = useCallback(async (mintAddress?: string) => {
+        setLoading(true);
+        try {
+            const response = await client.getPredictionMarkets(mintAddress);
+            if (response.success && response.data) {
+                setMarkets(response.data.markets);
+            }
+            return response;
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    const placeBet = useCallback(async (marketId: string, walletAddress: string, side: 'yes' | 'no', amount: number) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await client.placePredictionBet({ marketId, walletAddress, side, amount });
+            if (!response.success) setError(response.error || 'Failed to place bet');
+            return response;
+        } catch (e) {
+            const message = e instanceof Error ? e.message : 'Unknown error';
+            setError(message);
+            return { success: false, error: message };
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    return { createMarket, fetchMarkets, placeBet, markets, loading, error };
+}
+
+// React hook for copy-trading
+export function useVelocitiCopyTrade(apiKey: string, network: 'mainnet' | 'devnet' = 'devnet') {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [leaderboard, setLeaderboard] = useState<LeaderboardTrader[]>([]);
+    const [follows, setFollows] = useState<WalletFollow[]>([]);
+
+    const client = useMemo(() => new VelocitiClient({ apiKey, network }), [apiKey, network]);
+
+    const followTrader = useCallback(async (params: FollowTraderParams) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await client.followTrader(params);
+            if (!response.success) setError(response.error || 'Failed to follow');
+            return response;
+        } catch (e) {
+            const message = e instanceof Error ? e.message : 'Unknown error';
+            setError(message);
+            return { success: false, error: message };
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    const unfollowTrader = useCallback(async (followerWallet: string, leaderWallet: string) => {
+        setLoading(true);
+        try {
+            return await client.unfollowTrader(followerWallet, leaderWallet);
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    const fetchLeaderboard = useCallback(async (sortBy?: string, period?: string) => {
+        setLoading(true);
+        try {
+            const response = await client.getLeaderboard(sortBy, period);
+            if (response.success && response.data) {
+                setLeaderboard(response.data.leaderboard);
+            }
+            return response;
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    const fetchFollows = useCallback(async (walletAddress: string) => {
+        setLoading(true);
+        try {
+            const response = await client.getFollows(walletAddress);
+            if (response.success && response.data) {
+                setFollows(response.data.follows);
+            }
+            return response;
+        } finally {
+            setLoading(false);
+        }
+    }, [client]);
+
+    return { followTrader, unfollowTrader, fetchLeaderboard, fetchFollows, leaderboard, follows, loading, error };
 }
